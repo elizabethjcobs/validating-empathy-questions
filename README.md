@@ -45,7 +45,7 @@ Extracted for use, due to their frequent use in the literature.
 | Measure of State Empathy (Shen, 2010) | MSE | 12 | State Empathy |
 
 <p align="center">
-  <img src="./images/state-emp.png" alt="State Empathy Correlation Plot">
+  <img src="state-emp.png" alt="State Empathy Correlation Plot">
 </p>
 
 This plot visualises the correlations between the various **State Empathy** questionnaires used in the study. By comparing the scores from the different questionnaires, it highlights how closely related each measure of **State Empathy** is with the others. The plot shows both positive and negative correlations, helping to identify patterns of similarity or difference in the way these questionnaires assess **state empathy** constructs. This correlation analysis is essential for understanding the consistency and reliability of the state empathy measures across different tools.
