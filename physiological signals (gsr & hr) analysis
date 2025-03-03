@@ -1,0 +1,764 @@
+---
+title: "1c data processing"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(data.table)
+library(readxl)
+library(signal)
+library(tidyverse)
+
+```
+
+# Load in data
+## Questionnaire Data
+
+```{r}
+# Read the CSV file
+orig <- read_csv("Study-1c-quests_2024-04-12.csv", show_col_types = FALSE) %>%
+  filter(user_status == "guest")
+
+# Edit the user_id so it suits the one I gave them
+# Fix 03, 04, 07 for age and sex. 03 & 04 were of the same session because they didnt log out and have same demo as 02
+p_id <- orig %>%
+  filter(q_name == "participant_id") %>%
+  select(session_id, p_id = dv, user_age, user_sex) %>%
+  mutate(p_id = gsub("P", "", p_id)) %>%
+  mutate(condition = rep(c("N", "S"), length.out = nrow(.))) %>%
+  mutate(user_age = case_match(p_id, 
+                               "01" ~ 19,
+                               "03" ~ 22,
+                               "04" ~ 19,
+                               "06" ~ 24,
+                               "07" ~ 22,
+                               "08" ~ 28,
+                               "09" ~ 30,
+                               .default = user_age)) %>%
+   mutate(user_sex = case_match(p_id, 
+                               "01" ~ "female",
+                               "03" ~ "female",
+                               "04" ~ "female",
+                               "06" ~ "male",
+                               "07" ~ "female",
+                               "08" ~ "female",
+                               "09" ~ "male",
+                               .default = user_sex))
+
+
+# Update user_id based on session_id
+orig <- orig %>% 
+  select(-user_age, -user_sex) %>%
+  left_join(p_id, by = "session_id") %>%
+  # count(session_id, user_id, p_id)
+  mutate(user_id = p_id)
+```
+
+# Descriptive data
+
+```{r}
+# Calculate average and standard deviation of user age by gender
+age_stats <- p_id %>%
+  group_by(user_sex) %>%
+  summarize(
+    avg_age = mean(user_age),
+    sd_age = sd(user_age)
+  )
+
+print(age_stats)
+```
+
+
+```{r}
+numdat <- orig %>%
+  select(user_id, user_sex, q_name, dv, condition) %>%
+  separate(q_name, into = c("quest", "q_n"), sep = "_", 
+           extra = "drop", fill = "right") %>%
+  mutate(subscale = case_when(
+    quest == "MSE" &
+      q_n %in% c("1", "2", "3", "4") ~ "AE",
+    quest == "MSE" &
+      q_n %in% c("5", "6", "7", "8") ~ "CE",
+    quest == "MSE" &
+      q_n %in% c("9", "10", "11", "12") ~ "AssE",
+    quest == "MDEES" &
+      q_n %in% c("1", "20", "25") ~ "RC",
+    quest == "MDEES" &
+      q_n %in% c("3", "5", "6", "8", "12", "18", "24", "28") ~ "PS",
+    quest == "MDEES" &
+      q_n %in% c("4", "9", "13", "27") ~ "EA",
+    quest == "MDEES" &
+      q_n %in% c("10", "15", "16", "21") ~ "FfO",
+    quest == "MDEES" &
+      q_n %in% c("11", "17") ~ "EC",
+    TRUE ~ ""
+  )) %>%
+  select(-q_n)
+
+
+
+```
+
+### Scoring of questionnaire data
+
+```{r}
+# Scoring codes
+qscoring <- list(
+  "MSE" = c("Not at all" = 0, 
+            "Not at all (0)" = 0,
+            "0" = 0,
+            "1" = 1, 
+            "2" = 2, 
+            "3" = 3,
+            "4" = 4,
+            "5" = 5,
+            "Entirely (6)" = 6,
+            "Entirely 6" = 6,
+            "6" = 6),
+  "MDEES" = c("Strongly Disagree" = 1, 
+              "Slightly Disagree" = 2, 
+              "Neutral" = 3,
+              "Slightly Agree" = 4, 
+              "Strongly Agree" = 5)
+)
+
+scoredat <- numdat %>%
+  filter(quest %in% c("MDEES", "MSE")) %>%
+  mutate(dv_num = case_when(
+    quest == "MDEES" ~ qscoring[["MDEES"]][dv],
+    quest == "MSE" ~ qscoring[["MSE"]][dv],
+    TRUE ~ NA
+  ))  %>%
+  drop_na(dv_num)
+
+# Check the first few rows of scoredat with the condition column added
+head(scoredat)
+
+
+
+
+```
+
+# Analysis of Questionnaire scores
+```{r}
+
+# Extract MSE and MDEES scores
+scales <- scoredat %>%
+  group_by(user_id, user_sex, quest, condition) %>%
+  summarize(score = mean(dv_num, na.rm = TRUE), .groups = "drop")
+
+subscales <- scoredat %>%
+  group_by(user_id, quest, user_sex, condition) %>%
+  summarize(
+    score = mean(dv_num, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# calculate MDEES general empathy score
+mdees_ge <- subscales %>%
+  group_by(user_id, user_sex, quest, condition) %>%
+  summarize(score = mean(score, na.rm = TRUE),
+            .groups = "drop") %>%
+  mutate(subscale = "GE")
+
+# add to subscales
+subscales <- bind_rows(subscales, mdees_ge) %>%
+  mutate(subscale = ifelse(is.na(subscale), "", subscale))
+
+# Print the column headers and first few rows of data
+head(subscales)
+
+
+# Assuming subscales dataframe contains the necessary columns: user_id, user_sex, quest,  score
+
+```
+
+
+### Correlation Matrix 
+
+```{r}
+# Calculate correlation matrix for dv_num scores
+cor_matrix <- scales %>%
+ # filter(Gender == "Female") %>%
+  pivot_wider(
+    names_from = quest,
+    values_from = score) %>%
+  select( MDEES, MSE) %>%
+  cor(use = "complete.obs")
+
+# Print the correlation matrix
+print(cor_matrix)
+```
+
+
+
+## Questionnaire comparison by gender & condition
+```{r}
+mse_scores <- scales %>%
+  filter(quest == "MSE") 
+
+  t.test(score ~ condition, data= mse_scores)
+
+
+
+mdees_scores <- scales %>%
+  filter(quest == "MDEES") %>%
+  t.test(score ~ condition, data= .)
+
+mdees_scores
+```
+
+```{r}
+p_id %>% count(user_sex, condition) %>%
+  pivot_wider(names_from = condition, values_from = n)
+```
+
+
+## ANOVA for MSE scores by condition & gender
+```{r}
+library(afex)
+
+mse_scores %>%
+  filter(user_sex != "nonbinary") %>%
+  
+
+aov_ez(id= "user_id", dv= "score", between= c("condition", "user_sex"), data = .)
+
+
+# can rerun similarly on physio data, hr b hr s/n
+```
+
+
+### Questionnaire averages by gender
+
+```{r}
+
+
+# Group by user_sex, quest, and condition
+gender_condition_avg <- subscales %>%
+  group_by(user_sex, quest, condition) %>%
+  summarize(avg_score = mean(score, na.rm = TRUE), .groups = "drop") %>%
+  subset(quest %in% c("MSE", "MDEES"))
+
+# Print the result
+print(gender_condition_avg)
+
+
+# Group by quest and condition
+quest_condition_avg <- subscales %>%
+  group_by(quest, condition) %>%
+  summarize(avg_score = mean(score, na.rm = TRUE), .groups = "drop") %>%
+  subset(quest %in% c("MSE", "MDEES"))
+
+# Print the result
+print(quest_condition_avg)
+
+
+# Group by user_sex, quest
+gender_condition_avg <- subscales %>%
+  group_by(user_sex, condition) %>%
+  summarize(avg_score = mean(score, na.rm = TRUE), .groups = "drop")
+
+# Print the result
+print(gender_condition_avg)
+
+```
+
+
+### Qualitative data
+
+```{r}
+
+
+qualitative_data <- orig[grepl("Qualitative Qs for 1c", orig$quest_name), c("user_id", "user_sex", "user_age", "dv", "quest_name", "condition")]
+
+# Print the resulting dataframe
+print(qualitative_data)
+
+
+```
+
+### Visual Distributions of Questionnaire data
+
+```{r}
+quest_colours <- c( "cyan", "purple3")
+
+ggplot(scales, aes(x = score, fill = quest)) +
+  geom_histogram(binwidth = 0.25, color = "black") +
+  facet_grid(user_sex~quest) +
+  scale_x_continuous(breaks = 0:7) +
+  scale_fill_manual(values = quest_colours) +
+  theme(legend.position = "none")
+
+ggplot(subscales, aes(x = score, fill = quest)) +
+  geom_histogram(binwidth = 0.5, color = "black") +
+  facet_wrap(~quest*subscale) +
+  scale_x_continuous(breaks = 0:7) +
+  scale_fill_manual(values = quest_colours) +
+  theme(legend.position = "none")
+```
+
+
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+
+theme_set(theme_minimal(base_size = 13))
+condition_colours <- scale_colour_manual(values = c("dodgerblue3", "firebrick3"))
+```
+
+## Data processing
+
+### Load all data
+
+```{r}
+cnames <- c("timestamp", "gsr_range", "gsr_conductance","gsr_resistance", "ppg")
+
+files <- list.files("mega_file", ".csv", full.names = TRUE)
+
+orig <- read_delim(files[3:44], 
+                delim = "\t",
+                id = "file_path",
+                col_select = 1:5, 
+                skip = 3, 
+                col_names = cnames, 
+                show_col_types = FALSE)
+```
+
+### Fix issues
+
+```{r}
+fixed <- orig %>%
+  separate(file_path, convert = TRUE,
+           into = c(NA, NA, "participant_id", "session"), 
+           sep = "_", 
+           extra = "drop",
+           ) %>%
+  mutate(session = gsub("Session", "", session)) %>%
+  mutate(session = recode(session,
+                          `1` = 1, `2` = 2, `3` = 1, `4` = 2)) %>%
+  # get 0-based timestamp in ms
+  mutate(ts = round(timestamp - min(timestamp)), 
+         .by = participant_id) %>%
+  mutate(condition = case_when(
+    participant_id %% 2 == 1 ~ "No Empathy",
+    participant_id %% 2 == 0 ~ "Empathy"
+  ))
+```
+
+### Checks
+
+```{r}
+total_durations <- fixed %>%
+  summarise(min_ts = min(timestamp)/1000,
+            max_ts = max(timestamp)/1000,
+            duration = round(max_ts - min_ts), 
+            min_dt = as_datetime(min_ts),
+            max_dt = as_datetime(max_ts),
+            .by = c(participant_id, session))
+```
+
+
+
+```{r}
+ggplot(total_durations, aes(duration, color = as.character(session))) +
+  geom_density()
+
+ggsave("figs/durations.png", width = 7, height = 5)
+```
+
+
+
+
+### Offsets
+
+```{r}
+pt <- read_csv("participant_times.csv", 
+               col_select = 1:6, 
+               col_types = "iccccc") %>%
+  pivot_longer(cols = 2:6) %>%
+  separate(name, into = c("stim", "event")) %>%
+  separate(value, into = c("min", "sec"), convert = TRUE) %>%
+  mutate(ts = 60*min + sec) %>%
+  select(-min, -sec) %>%
+  pivot_wider(names_from = event, values_from = ts) %>%
+  mutate(end = start + duration) %>%
+  select(-duration) %>%
+  pivot_wider(names_from = stim, values_from = start:end) %>%
+  select(participant_id, start_baseline, end_baseline, start_stimuli, end_stimuli)
+```
+
+
+### Join
+
+```{r}
+timings <- left_join(fixed, pt, by = "participant_id") %>%
+  mutate(tss = ts/1000,
+         section = case_when(
+           tss < start_baseline ~ "prebaseline",
+           tss <= end_baseline ~ "baseline",
+           tss < start_stimuli ~ "interval", # shouldn't exist
+           tss <= end_stimuli ~ "stimuli",
+           tss > end_stimuli ~ "poststimuli"
+          ))
+```
+
+
+
+Not all baseline in session 1 and stimuli in session 2
+
+```{r}
+count(timings, section, session) %>%
+  pivot_wider(names_from = session, values_from = n)
+```
+
+```{r}
+count(timings, participant_id, section) %>%
+  pivot_wider(names_from = section, values_from = n) %>%
+  select(participant_id, prebaseline, baseline, stimuli, poststimuli)
+```
+
+### Filter to just video frames
+
+```{r}
+biodat <- timings %>%
+  filter(section %in% c("baseline", "stimuli")) %>%
+  select(participant_id, section, starts_with("gsr"), ppg, ts) %>%
+  mutate(ts0 = ts - min(ts), .by = c(participant_id, section)) %>%
+  mutate(condition = case_when(
+    participant_id %% 2 == 1 ~ "No Empathy",
+    participant_id %% 2 == 0 ~ "Empathy"
+  ))
+```
+
+## Visualise
+
+### GSR Conductance 
+
+```{r}
+biodat %>%
+  filter(gsr_conductance < 8) %>%
+  ggplot(aes(ts0/1000, 
+             gsr_conductance, 
+             group = participant_id, 
+             color = section)) +
+  geom_line(show.legend = FALSE) +
+  facet_grid(condition ~ section, scales = "free_x") +
+  labs(title = "GSR Conductance", x = "seconds") +
+  condition_colours
+
+ggsave("figs/gsr_conductance.png", width = 7, height = 5)
+```
+
+### GSR Resistance
+
+```{r}
+biodat %>%
+  ggplot(aes(ts0/1000, gsr_resistance, group = participant_id, color = section)) +
+  geom_line(show.legend = FALSE) +
+  facet_grid(condition ~ section, scales = "free_x") +
+  labs(title = "GSR Resistance", x = "seconds") +
+  condition_colours
+
+ggsave("figs/gsr_resistance_all.png", width = 7, height = 5)
+```
+
+Normalise resistance by participant-specific max value
+
+```{r}
+biodat %>%
+  mutate(gsr_res_norm = gsr_resistance/max(gsr_resistance), .by = participant_id) %>%
+  ggplot(aes(ts0/1000, gsr_res_norm, group = participant_id, color = section)) +
+  geom_line(show.legend = FALSE) +
+  facet_grid(condition ~ section, scales = "free_x") +
+  labs(title = "GSR Resistance (Normalised)", x = "seconds", y = "GSR Resistance (% of max)") +
+  condition_colours
+
+ggsave("figs/gsr_resistance_norm.png", width = 7, height = 5)
+```
+
+### PPG
+
+```{r, fig.width = 10, fig.height = 10}
+biodat %>%
+  ggplot(aes(ts0/1000, 
+             ppg, 
+             group = participant_id, 
+             color = section)) +
+  geom_line(show.legend = FALSE, linewidth = 0.1) +
+  facet_grid(participant_id ~ section + condition, scales = "free_y") +
+  labs(title = "PPG (heart)", x = "seconds") +
+  condition_colours
+
+ggsave("figs/gsr_ppg_ind.png", width = 10, height = 10)
+```
+
+Seconds 30-45
+
+```{r, fig.width = 10, fig.height = 10}
+biodat %>%
+  filter(ts0 > 30000, ts0 < 45000) %>%
+  ggplot(aes(ts0/1000, 
+             ppg, 
+             group = participant_id, 
+             color = section)) +
+  geom_line(show.legend = FALSE) +
+  facet_grid(participant_id ~ section + condition, scales = "free_y") +
+  labs(title = "15 seconds of PPG (heart)", x = "seconds") +
+  condition_colours
+
+ggsave("figs/gsr_ppg_30-45.png", width = 10, height = 10)
+```
+
+# Filtering
+## GSR Conductance
+
+```{r}
+library(signal)  # Load the signal package for the butter() function
+
+# Butterworth Filter Function
+butterworth_filter <- function(data, cutoff_frequency, sampling_rate) {
+  # Normalize the cutoff frequency
+  nyquist <- sampling_rate / 2
+  normalized_cutoff <- cutoff_frequency / nyquist
+  
+  # Order of the filter
+  filter_order <- 2
+  
+  # Butterworth filter coefficients
+  b <- butter(filter_order, normalized_cutoff)
+  
+  # Apply the filter
+  filtered_data <- signal::filter(b, data)
+  
+  # Return the filtered data
+  return(filtered_data)
+}
+
+# Filter GSR Conductance data
+filtered_biodat_gsr_c <- biodat %>%
+  filter(gsr_conductance < 8) %>%
+  group_by(participant_id, section) %>%
+  mutate(filtered_gsr_conductance = butterworth_filter(gsr_conductance, cutoff_frequency = 0.1, sampling_rate = 51))
+
+# have a further look into cutoff freq, dont filter by 8?
+
+# Plot filtered GSR Conductance data
+filtered_biodat_gsr_c %>%
+  ggplot(aes(ts0 / 1000, filtered_gsr_conductance, group = participant_id, color = section)) +
+  geom_line(show.legend = FALSE) +
+  facet_grid(condition ~ section, scales = "free_x") +
+  labs(title = "Filtered GSR Conductance", x = "Time (seconds)") +
+  condition_colours
+
+# Save the plot
+ggsave("figs/filtered_gsr_conductance.png", width = 7, height = 5)
+
+```
+
+## GSR Resistance
+
+```{r}
+library(signal)  # Load the signal package for the butter() function
+
+# Butterworth Filter Function
+butterworth_filter <- function(data, cutoff_frequency, sampling_rate) {
+  # Normalize the cutoff frequency
+  nyquist <- sampling_rate / 2
+  normalized_cutoff <- cutoff_frequency / nyquist
+  
+  # Order of the filter
+  filter_order <- 2
+  
+  # Butterworth filter coefficients
+  b <- butter(filter_order, normalized_cutoff)
+  
+  # Apply the filter
+  filtered_data <- signal::filter(b, data)
+  
+  # Return the filtered data
+  return(filtered_data)
+}
+
+# Apply Butterworth filter to GSR Resistance data
+filtered_biodat_gsr_r <- biodat %>%
+  group_by(participant_id, section) %>%
+  mutate(filtered_gsr_resistance = butterworth_filter(gsr_resistance, cutoff_frequency = 0.1, sampling_rate = 1000))
+
+# Plot filtered GSR Resistance data
+filtered_biodat_gsr_r %>%
+  ggplot(aes(ts0 / 1000, filtered_gsr_resistance, group = participant_id, color = section)) +
+  geom_line(show.legend = FALSE) +
+  facet_grid(condition ~ section, scales = "free_x") +
+  labs(title = "Filtered GSR Resistance", x = "Time (seconds)") +
+  condition_colours
+
+# Save the plot
+ggsave("figs/filtered_gsr_resistance_all.png", width = 7, height = 5)
+
+```
+## PPG to HR (BPM every 30s)
+```{r}
+bpm_30s <- read_csv("bpm_data_30s.csv", show_col_types = FALSE) %>%
+  mutate(condition = case_when(
+    participant_id %% 2 == 1 ~ "No Empathy",
+    participant_id %% 2 == 0 ~ "Empathy"
+  ))
+```
+### BPM Visualisations
+```{r}
+library(ggplot2)
+
+# Create a list of unique participant IDs
+participant_ids <- unique(bpm_30s$participant_id)
+
+for (participant_id in participant_ids) {
+  # Filter the data for the current participant
+  participant_data <- bpm_30s[bpm_30s$participant_id == participant_id, ]
+  
+  # Create a line plot for baseline and stimuli on the same graph
+  participant_plot <- ggplot(participant_data, aes(x = 1:nrow(participant_data), y = bpm, color = section)) +
+    geom_line() +
+    facet_grid(condition ~ ., scales = "free_y") +
+    labs(title = paste("Participant", participant_id), x = "Time (30s intervals)", y = "BPM") +
+    theme_minimal() +
+    scale_color_manual(values = c("baseline" = "blue", "stimuli" = "red"))
+  
+  # Display the plot
+  print(participant_plot)
+}
+
+```
+
+#Data Analysis
+
+##Paired T-Test for GSR Conductance (P value need help)
+```{r}
+library(dplyr)
+
+# Find the minimum number of observations for each participant and condition
+min_paired_points <- filtered_biodat_gsr_c %>%
+  group_by(participant_id, condition) %>%
+  summarize(
+    min_points = min(c(sum(section == "baseline"), 
+                       sum(section == "stimuli")))
+  )
+
+paired_t_test_results <- filtered_biodat_gsr_c %>%
+  filter(section %in% c("baseline", "stimuli")) %>%
+  group_by(participant_id, section) %>%
+  mutate(row_num = row_number()) %>%
+  filter(row_num <= min_paired_points$min_points[match(participant_id, unique(participant_id))]) %>%
+  group_by(participant_id) %>%
+  summarize(
+    t_statistic = t.test(filtered_gsr_conductance[section == "baseline"], filtered_gsr_conductance[section == "stimuli"], paired = TRUE)$statistic,
+    p_value = t.test(filtered_gsr_conductance[section == "baseline"], filtered_gsr_conductance[section == "stimuli"], paired = TRUE)$p.value
+  ) %>%
+  ungroup()
+
+# Add the condition column to the end of the dataframe
+paired_t_test_results <- paired_t_test_results %>%
+  mutate(condition = min_paired_points$condition[match(participant_id, min_paired_points$participant_id)])
+
+# Display the results
+print(paired_t_test_results)
+```
+
+## Paired T-Test for BPM
+has p-value except for NA in participant 03?
+```{r}
+library(dplyr)
+
+min_paired_points <- bpm_30s %>%
+  group_by(participant_id, condition) %>%
+  summarize(
+    min_points = min(c(sum(section == "baseline" & !is.na(bpm)), 
+                       sum(section == "stimuli" & !is.na(bpm)))),
+    .groups = "drop"
+  )
+
+# Perform paired t-test for each participant
+paired_t_test_results <- bpm_30s %>%
+  filter(section %in% c("baseline", "stimuli")) %>%
+  group_by(participant_id, section) %>%
+  mutate(row_num = row_number()) %>%
+  filter(row_num <= min_paired_points$min_points[match(participant_id, unique(participant_id))]) %>%
+  group_by(participant_id) %>%
+  summarize(
+    t_statistic = tryCatch({
+      t.test(bpm[section == "baseline"], bpm[section == "stimuli"], paired = TRUE)$statistic
+    }, error = function(e) NA),
+    p_value = tryCatch({
+      t.test(bpm[section == "baseline"], bpm[section == "stimuli"], paired = TRUE)$p.value
+    }, error = function(e) NA)
+  ) %>%
+  ungroup()
+
+# Add the condition column to the end of the dataframe
+paired_t_test_results <- paired_t_test_results %>%
+  mutate(condition = min_paired_points$condition[match(participant_id, min_paired_points$participant_id)])
+
+# Display the results
+print(paired_t_test_results)
+```
+
+```{r}
+# Load required libraries
+library(dplyr)
+library(lubridate)
+
+# Convert time to seconds (HH:MM:SS to total seconds)
+data <- data.frame(
+  participant_id = 1:22,
+  baseline_start = c("00:24", "01:09", "00:36", "00:10", "00:13", "00:06", "00:43", "00:27", 
+                     "00:11", "00:13", "00:04", "00:07", "00:23", "00:14", "00:07", "00:18", 
+                     "00:13", "00:14", "00:13", "00:18", "00:09", "00:16"),
+  stimuli_start = c("04:06", "04:16", "04:05", "04:09", "04:07", "04:36", "04:14", "04:14", 
+                    "03:59", "04:02", "04:06", "04:10", "04:12", "04:09", "04:01", "04:12", 
+                    "04:22", "04:10", "04:14", "04:01", "04:04", "04:03"),
+  stimuli_end = c("08:09", "08:32", "07:42", "08:23", "08:20", "08:54", "07:54", "08:10", 
+                  "08:12", "08:12", "08:26", "08:29", "08:13", "08:04", "08:17", "08:17", 
+                  "08:33", "08:20", "08:25", "08:07", "08:18", "08:10"),
+  baseline_duration = c("03:42", "03:07", "03:29", "03:59", "03:54", "04:30", "03:31", "03:47", 
+                        "03:48", "03:49", "04:02", "04:03", "03:49", "03:55", "03:54", "03:54", 
+                        "04:09", "03:56", "04:01", "03:43", "03:55", "03:47"),
+  stimuli_duration = c("04:03", "04:16", "03:37", "04:14", "04:13", "04:18", "03:40", "03:56", 
+                       "04:13", "04:10", "04:20", "04:19", "04:01", "03:55", "04:16", "04:05", 
+                       "04:11", "04:10", "04:11", "04:06", "04:14", "04:07")
+)
+
+# Function to convert HH:MM or HH:MM:SS to total seconds
+time_to_seconds <- function(time_str) {
+  time_parts <- strsplit(time_str, ":")[[1]]
+  if (length(time_parts) == 2) {
+    return(as.numeric(time_parts[1]) * 60 + as.numeric(time_parts[2]))
+  } else if (length(time_parts) == 3) {
+    return(as.numeric(time_parts[1]) * 3600 + as.numeric(time_parts[2]) * 60 + as.numeric(time_parts[3]))
+  }
+}
+
+# Apply function to convert all relevant time columns
+data <- data %>%
+  mutate(
+    baseline_start_seconds = sapply(baseline_start, time_to_seconds),
+    stimuli_start_seconds = sapply(stimuli_start, time_to_seconds),
+    stimuli_end_seconds = sapply(stimuli_end, time_to_seconds),
+    baseline_duration_seconds = sapply(baseline_duration, time_to_seconds),
+    stimuli_duration_seconds = sapply(stimuli_duration, time_to_seconds)
+  )
+
+# View the updated data
+print(data)
+
+
+```
+
