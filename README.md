@@ -3,7 +3,7 @@ Empathy is measured using numerous questionnaires, many of which claim to assess
 
 - **Trait Empathy** refers to a person's general tendency or disposition to experience empathy across various situations, typically measured through questionnaires assessing cognitive and affective components.  
 - **State Empathy** refers to the temporary emotional experience or response to a specific situation, often assessed in response to a particular event or context.
-- 
+  
 The R code in this repository processes survey data, computes reliability metrics, and assesses factor structures to evaluate how well these questionnaires align with theoretical empathy dimensions.
 
 ### **Questionnaires were extracted for use based on their common application in the literature, but were limited to those with available open-access scoring metrics.**
