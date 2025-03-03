@@ -1,0 +1,328 @@
+---
+title: "State Empathy"
+date: "2024-01-16"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+
+# nicer ggplot defaults
+theme_set(theme_minimal(base_size = 12))
+```
+
+## Data Processing
+
+### Reshape data
+
+Get the format of the data to be collected from some test runs.
+
+```{r}
+# get data
+orig <- read_csv("30_r_statetest.csv", show_col_types = FALSE) 
+
+numdat <- orig %>%
+  select(ResponseId, Gender, 
+         starts_with("ISO"), 
+         starts_with("MSE"),
+         starts_with("MDEES")) %>%
+  pivot_longer(cols = -c(ResponseId, Gender), 
+               names_to = "quest", 
+               values_to = "dv") %>%
+  separate(quest, into = c("quest", "q_n"), sep = "_") %>%
+  # assign subscales
+  mutate(subscale = case_when(
+            quest == "ISO" ~ "",
+            quest == "MSE" &
+              q_n %in% c("1", "2", "3", "4") ~ "AE",
+            quest == "MSE" &
+              q_n %in% c("5", "6", "7", "8") ~ "CE",
+            quest == "MSE" &
+              q_n %in% c("9", "10", "11", "12") ~ "AssE",
+            # otherwise quest == MDEES
+            q_n %in% c("1", "20", "25") ~ "RC",
+            q_n %in% c("3", "5", "6", "8", "12", "18", "24", "28") ~ "PS",
+            q_n %in% c("4", "9", "13", "27") ~ "EA",
+            q_n %in% c("10", "15", "16", "21") ~ "FfO",
+            q_n %in% c("11", "17") ~ "EC",
+            TRUE ~ ""
+         ))
+  
+
+# Include "Tr_A_3" and "Te_A" columns, note: these wont work at the moment just due to the testdata
+
+  #select(ResponseId, Gender, starts_with("ISO"), starts_with("MSE"), starts_with("MDEES"), Tr_A_3, Te_A)
+```
+
+
+### Filter out invalid responses
+
+```{r}
+# This is to remove participants who failed the trial attention check ("Select No")
+
+
+# This is to remove participants who failed the test attention check ("What scenes did the video show?")
+#testdat <- testdat %>%
+  #filter(!(Te_A %in% c("Classroom", "Restaurant", "Cinema")))
+
+```
+
+
+### Convert DVs to numbers
+
+```{r}
+qscoring <-list(
+  "ISO" = c("No overlap" = 1, 
+             "Little overlap" = 2, "Some overlap" = 3, "Equal overlap" = 4, "Strong overlap" = 5, "Very strong overlap" = 6, "Most overlap" = 7),
+  "MSE" = c("Not at all" = 0, 
+            "Not at all (0)" = 0, 
+             "1" = 1, 
+             "2" = 2, 
+             "3" = 3,
+             "4" = 4,
+             "5" = 5,
+             "Entirely (6)" = 6),
+    "MDEES" = c("Strongly Disagree" = 1, 
+              "Slightly Disagree" = 2, 
+              "Neutral" = 3,
+              "Slightly Agree" = 4, 
+              "Strongly Agree" = 5))
+
+
+```
+
+```{r}
+scoredat <- numdat |>
+  rowwise() |>
+  mutate(dv_num = qscoring[[quest]][dv])
+
+# check that all NULL or NA values are actually missing dv and not bad coding
+filter(scoredat, is.na(dv_num) | is.null(dv_num))
+```
+
+## Overall Scores
+
+```{r}
+# Extract MSE, ISO, and MDEES scores
+scales <- scoredat %>%
+  group_by(ResponseId, Gender, quest) %>%
+  summarize(score = mean(dv_num, na.rm = TRUE), .groups = "drop")
+```
+
+### Distributions
+
+```{r}
+quest_colours <- c("darkorange", "forestgreen", "purple3")
+
+ggplot(scales, aes(x = score, fill = quest)) +
+  geom_histogram(binwidth = 0.25, color = "black") +
+  facet_grid(Gender~quest) +
+  scale_x_continuous(breaks = 0:7) +
+  scale_fill_manual(values = quest_colours) +
+  theme(legend.position = "none")
+```
+```{r}
+scales %>%
+  group_by(Gender, quest) %>%
+  summarise(mean = mean(score),
+            sd = sd(score))
+```
+
+
+### Correlation Matrix 
+
+```{r}
+# Calculate correlation matrix for dv_num scores
+cor_matrix <- scales %>%
+ # filter(Gender == "Female") %>%
+  pivot_wider(
+    names_from = quest,
+    values_from = score) %>%
+  select(ISO, MDEES, MSE) %>%
+  cor(use = "complete.obs")
+
+# Print the correlation matrix
+print(cor_matrix)
+```
+```{r}
+library(tidyr)
+library(ggplot2)
+
+# Assuming 'scales' is your dataframe
+
+# Reshape the dataframe and create the plot
+plot <- scales %>%
+  pivot_wider(
+    names_from = quest,
+    values_from = score) %>%
+  ggplot(aes(MDEES, MSE, colour = Gender)) + 
+  geom_point() + 
+  geom_smooth(method = lm) +  # Linear regression line
+  geom_smooth(mapping = aes(x = MDEES, y = MSE), colour = "grey", se = FALSE) +  # Additional smooth line
+  theme_minimal()  # Optional: Adjust plot theme as needed for appearance
+
+# Set dimensions for the plot within the plotting device
+plot_width <- 10  # inches, adjust as needed
+plot_height <- 5  # inches, adjust as needed
+
+# Save the plot directly to a format with increased width
+ggsave("plot_wider_grey1.png", plot = plot, width = plot_width, height = plot_height, units = "in", dpi = 300)
+
+
+
+```
+## looks correlated until you run it on gender (men are slightly + women are slightly -, but women look higher on both unlike men so without gender), overall positive correlation driven by gender diff, mse is more continuous than ordinal. not a big reason to use one or the other, use these in 1c (empathy and non), m and f separate bc of what this study has suggested ( no ceiling or floor effects)
+```{r}
+library(tidyr)
+library(ggplot2)
+
+# Assuming 'scales' is your dataframe
+
+# Reshape the dataframe and create the plot
+plot <- scales %>%
+  pivot_wider(
+    names_from = quest,
+    values_from = score) %>%
+  ggplot(aes(MDEES, ISO, colour = Gender)) + 
+  geom_point() + 
+  geom_smooth(method = lm) +  # Linear regression line
+  geom_smooth(mapping = aes(x = MDEES, y = ISO), colour = "grey", se = FALSE) +  # Additional smooth line
+  theme_minimal()  # Optional: Adjust plot theme as needed for appearance
+
+# Set dimensions for the plot within the plotting device
+plot_width <- 10  # inches, adjust as needed
+plot_height <- 5  # inches, adjust as needed
+
+# Save the plot directly to a format with increased width
+ggsave("plot_wider_grey2.png", plot = plot, width = plot_width, height = plot_height, units = "in", dpi = 300)
+
+
+
+
+```
+
+## Subscales
+
+[SHOULD THESE BE AVERAGED OR SUMMED? WHAT TO DO WITH MISSING ANSWERS?]
+
+```{r}
+subscales <- scoredat %>%
+  group_by(ResponseId, quest, subscale, Gender) %>%
+  summarize(
+    score = mean(dv_num, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# calculate MDEES general empathy score
+mdees_ge <- subscales %>%
+  filter(quest == "MDEES", subscale != "") %>%
+  group_by(ResponseId, Gender, quest) %>%
+  summarise(score = mean(score),
+            .groups = "drop") %>%
+  mutate(subscale = "GE")
+
+# add to subscales
+subscales <- bind_rows(subscales, mdees_ge) %>%
+  mutate(subscale = ifelse(is.na(subscale), "", subscale))
+
+ggplot(subscales, aes(x = score, fill = quest)) +
+  geom_histogram(binwidth = 0.5, color = "black") +
+  facet_wrap(~quest*subscale) +
+  scale_x_continuous(breaks = 0:7) +
+  scale_fill_manual(values = quest_colours) +
+  theme(legend.position = "none")
+```
+
+
+
+### MDEES Scoring Code
+
+Reverse-scored items were recorded reversed, so they don't need reversed in the code below.
+
+Add all the scores for the Total score and divide by 30. 
+
+Add the following items together for each scale, and divide by the number of items: 
+
+ * Suffering (3, 5, 6, 8, 12, 18, 24, 28); 
+ * Positive Sharing (14, 22, 23, 29, 30);
+ * Responsive Crying (1, 20, 25); 
+ * Emotional Attention (4, 9, 13, 27); 
+ * Feel for Others (10, 15, 16, 21); 
+ * Emotional Contagion (11, 17). 
+ 
+Take the mean of these sub-scales to compute a General Empathy scale. 
+Citation: The Multidimesional Emotional Empathy Scale (Caruso & Mayer, 1998)
+
+
+### MSE Scoring 
+
+Citation: https://www.researchgate.net/figure/tems-and-Dimensions-of-the-State-Empathy-Scale_tbl1_233464674
+
+Scoring:Three 3-item Likert subscales were designed to measure state levels of cognitive, affective, and compassionate empathy based on definitions adapted from Ekman (2003): “understanding how someone is feeling, but not necessarily also feeling it” (cognitive); “physically feeling the same way as another person is feeling” (affective); and “in-the-moment feelings of compassion, sympathy or concern” (compassion). Participants rated their agreement with each item on a 7-point Likert scale (0 = not at all, 6 = entirely).
+
+### ISO Scoring
+	
+Citation: Aron, A., Aron, E. N., Tudor, M., & Nelson, G. (1991). Close relationships as including other in the self. Journal of Personality and Social Psychology, 60(2), 241-253.
+
+Scoring: To score this scale, researchers record the number of the pair (1 to 7) the respondent selected.
+
+Respondents choose a pair of circles from seven with different degrees of overlap. 1 = no overlap; 2 = little overlap; 3 = some overlap; 4 = equal overlap; 5 = strong overlap; 6 = very strong overlap; 7 = most overlap
+
+
+```{r}
+# Split data by gender 
+male_data <- scales %>% filter(Gender == "Male")
+female_data <- scales %>% filter(Gender == "Female")
+
+# Calculate correlations for males
+male_iso_mdees_cor <- cor(male_data$score[male_data$quest == "ISO"], 
+                          male_data$score[male_data$quest == "MDEES"], 
+                          use = "pairwise.complete.obs")
+
+male_iso_mdees_p <- cor.test(male_data$score[male_data$quest == "ISO"],
+                             male_data$score[male_data$quest == "MDEES"],
+                             use = "pairwise.complete.obs")$p.value
+
+male_mse_mdees_cor <- cor(male_data$score[male_data$quest == "MSE"],
+                          male_data$score[male_data$quest == "MDEES"],
+                          use = "pairwise.complete.obs")
+
+male_mse_mdees_p <- cor.test(male_data$score[male_data$quest == "MSE"], 
+                             male_data$score[male_data$quest == "MDEES"],
+                             use = "pairwise.complete.obs")$p.value
+
+# Calculate correlations for females
+female_iso_mdees_cor <- cor(female_data$score[female_data$quest == "ISO"],
+                            female_data$score[female_data$quest == "MDEES"],
+                            use = "pairwise.complete.obs")
+
+female_iso_mdees_p <- cor.test(female_data$score[female_data$quest == "ISO"],
+                               female_data$score[female_data$quest == "MDEES"], 
+                               use = "pairwise.complete.obs")$p.value
+
+female_mse_mdees_cor <- cor(female_data$score[female_data$quest == "MSE"],
+                            female_data$score[female_data$quest == "MDEES"],
+                            use = "pairwise.complete.obs")
+
+female_mse_mdees_p <- cor.test(female_data$score[female_data$quest == "MSE"],
+                               female_data$score[female_data$quest == "MDEES"],
+                               use = "pairwise.complete.obs")$p.value
+
+```
+
+```{r}
+
+cat("Among men:\n")
+cat("ISO and MDEES: r =", male_iso_mdees_cor, ", p =", male_iso_mdees_p, "\n")
+cat("MSE and MDEES: r =", male_mse_mdees_cor, ", p =", male_mse_mdees_p, "\n\n")
+
+cat("Among women:\n")
+cat("ISO and MDEES: r =", female_iso_mdees_cor, ", p =", female_iso_mdees_p, "\n")
+cat("MSE and MDEES: r =", female_mse_mdees_cor, ", p =", female_mse_mdees_p, "\n")
+
+```
+
