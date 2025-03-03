@@ -34,7 +34,6 @@ Extracted for use, due to their frequent use in the literature.
 | Inclusion of the Other in the Self Scale (Aron et al., 1992) | IOS | 1 | State Empathy |
 | Measure of State Empathy (Shen, 2010) | MSE | 12 | State Empathy |
 
-This work was presented at **ISRE 2024**, and the full report is available [here](https://osf.io/fjaux).
 
 
 This work was presented at **ISRE 2024**, and the report can be accessed [here](https://osf.io/fjaux).
