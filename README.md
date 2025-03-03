@@ -25,6 +25,12 @@ Extracted due to their common use in the literature.
 | Toronto Empathy Questionnaire (Spreng et al., 2009) | TEQ | 16 | Affective |
 | Emotional Empathic Tendency Scale (Mehrabian & Epstein, 1972) | EETS | 33 | Affective |
 
+Additionally, a **correlation map** was generated to explore the relationships between various **trait empathy questionnaires**, focusing on clustering of **cognitive** and **affective** empathy constructs. This map reveals patterns of similarity and divergence across the measures, providing insights into how different questionnaires capture the cognitive and affective dimensions of empathy.
+![Correlation Map](correlation-map.png)
+
+When a **General Empathy (GE)** construct was introduced, it revealed that **GE** correlated with both **Affective Empathy (AE)** and **Cognitive Empathy (CE)** constructs, as measured by questionnaires (Figure 5). Despite there not being much difference between **Cognitive Empathy-General Empathy (CE-GE)** and **Affective Empathy-General Empathy (AE-GE)** correlations, **GE** correlates much more strongly with **AE** than with **CE**.
+
+![Correlation Density Plot](density.png)
 
 ## **Table 2: State Empathy Questionnaires**  
 Extracted for use, due to their frequent use in the literature.  
