@@ -26,7 +26,7 @@ Extracted due to their common use in the literature.
 | Emotional Empathic Tendency Scale (Mehrabian & Epstein, 1972) | EETS | 33 | Affective |
 
 Additionally, a **correlation map** was generated to explore the relationships between various **trait empathy questionnaires**, focusing on clustering of **cognitive** and **affective** empathy constructs. This map reveals patterns of similarity and divergence across the measures, providing insights into how different questionnaires capture the cognitive and affective dimensions of empathy.
-![Correlation Map](correlation-map.png)
+![Trait Empathy Correlation Map](correlation-map.png)
 
 When a **General Empathy (GE)** construct was introduced, it revealed that **GE** correlated with both **Affective Empathy (AE)** and **Cognitive Empathy (CE)** constructs, as measured by questionnaires (Figure 5). Despite there not being much difference between **Cognitive Empathy-General Empathy (CE-GE)** and **Affective Empathy-General Empathy (AE-GE)** correlations, **GE** correlates much more strongly with **AE** than with **CE**.
 
@@ -40,6 +40,7 @@ Extracted for use, due to their frequent use in the literature.
 | Inclusion of the Other in the Self Scale (Aron et al., 1992) | IOS | 1 | State Empathy |
 | Measure of State Empathy (Shen, 2010) | MSE | 12 | State Empathy |
 
-
+![State empathy correlation Plot](state-emp.png)
+This plot visualises the correlations between the various **State Empathy** questionnaires used in the study. By comparing the scores from the different questionnaires, it highlights how closely related each measure of **State Empathy** is with the others. The plot shows both positive and negative correlations, helping to identify patterns of similarity or difference in the way these questionnaires assess **state empathy** constructs. This correlation analysis is essential for understanding the consistency and reliability of the state empathy measures across different tools.
 
 This work was presented at **ISRE 2024**, and the report can be accessed [here](https://osf.io/fjaux).
